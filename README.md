@@ -37,38 +37,108 @@ API REST robusta desarrollada con **NestJS**, **TypeScript** y **TypeORM (SQLite
 
 ## Arquitectura del Sistema
 
-El proyecto sigue una arquitectura **N-Tier** dentro de módulos de NestJS, donde cada capa tiene responsabilidades únicas y solo depende de la inmediatamente inferior:
+El proyecto sigue una arquitectura **N-Tier** estricta dentro de módulos de NestJS, donde cada capa tiene responsabilidades únicas y solo depende de la inmediatamente inferior:
 
-```
-+-----------------------------------------------------------------------+
-|                    1. CAPA DE PRESENTACIÓN                            |
-| Controllers, DTOs, Guards (ApiKey, User, Roles), Pipes, Interceptor,  |
-| Exception Filter, Swagger Decorators                                  |
-+-----------------------------------+-----------------------------------+
-                                    |
-                                    v
-+-----------------------------------+-----------------------------------+
-|                    2. CAPA DE NEGOCIO                                 |
-| Services (SolicitudesService, UsersService),                          |
-| Máquina de Transiciones Pura (isValidTransition)                       |
-+-----------------------------------+-----------------------------------+
-                                    |
-                                    v
-+-----------------------------------+-----------------------------------+
-|                    3. CAPA DE ACCESO A DATOS (REPOSITORY)             |
-| Repositories propios (SolicitudesRepository, UsersRepository)         |
-| que encapsulan Repository<T> de TypeORM                               |
-+-----------------------------------+-----------------------------------+
-                                    |
-                                    v
-+-----------------------------------+-----------------------------------+
-|                    4. CAPA DE DATOS (PERSISTENCIA)                    |
-| Entidades TypeORM (Solicitud, User), Driver SQLite (better-sqlite3)   |
-+-----------------------------------------------------------------------+
+```mermaid
+flowchart TD
+    subgraph Client["Cliente / Consumidor"]
+        Req["Petición HTTP con x-api-key y x-user"]
+    end
+
+    subgraph Presentation["1. Capa de Presentación (Web / REST)"]
+        direction TB
+        G1["ApiKeyGuard (Valida x-api-key en API_KEYS)"]
+        G2["UserGuard (Valida x-user en base de datos)"]
+        G3["RolesGuard (Aplica restricciones @Roles)"]
+        Pipe["ValidationPipe (whitelist, forbidNonWhitelisted)"]
+        Ctrl["SolicitudesController (Rutas, DTOs, Swagger)"]
+        Int["TransformInterceptor (Envoltura success: true)"]
+        Filt["AllExceptionsFilter (Normalización de errores)"]
+
+        G1 --> G2 --> G3 --> Pipe --> Ctrl
+    end
+
+    subgraph Business["2. Capa de Negocio (Lógica de Aplicación)"]
+        direction TB
+        Srv["SolicitudesService (RN-01, RN-02, RN-03)"]
+        SM["Función Pura: isValidTransition (Estados)"]
+        UsrSrv["UsersService (Búsqueda de identidad y seed)"]
+        Srv -.-> SM
+    end
+
+    subgraph DataAccess["3. Capa de Acceso a Datos (Repository)"]
+        direction TB
+        Repo["SolicitudesRepository (Abstracción de consultas)"]
+        UsrRepo["UsersRepository (Abstracción de usuarios)"]
+    end
+
+    subgraph Persistence["4. Capa de Persistencia"]
+        direction TB
+        Ent1[("Entidad Solicitud: solicitudes_comerciales")]
+        Ent2[("Entidad User: users")]
+        DB[("Base de Datos SQLite: better-sqlite3")]
+        Ent1 --> DB
+        Ent2 --> DB
+    end
+
+    Req --> G1
+    Ctrl --> Srv
+    G2 --> UsrSrv
+    UsrSrv --> UsrRepo
+    UsrRepo --> Ent2
+    Srv --> Repo
+    Repo --> Ent1
+    Ctrl --> Int
+    Ctrl -. Error .-> Filt
 ```
 
 ### Flujo de una Petición HTTP
-1. **Entrada**: La petición arriba al servidor HTTP.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Cliente as Cliente HTTP
+    participant Guards as Guards (ApiKey + User + Roles)
+    participant Pipe as ValidationPipe
+    participant Ctrl as SolicitudesController
+    participant Srv as SolicitudesService
+    participant Repo as SolicitudesRepository
+    participant DB as SQLite (better-sqlite3)
+    participant Filter as AllExceptionsFilter
+    participant Interceptor as TransformInterceptor
+
+    Cliente->>Guards: Petición con x-api-key y x-user
+    alt API Key o Usuario inválido
+        Guards-->>Filter: Lanza 401 UnauthorizedException
+        Filter-->>Cliente: { success: false, statusCode: 401, error: "Unauthorized", ... }
+    else Rol no autorizado
+        Guards-->>Filter: Lanza 403 ForbiddenException
+        Filter-->>Cliente: { success: false, statusCode: 403, error: "Forbidden", ... }
+    end
+
+    Guards->>Pipe: Valida cuerpo con DTOs
+    alt Datos faltantes o inválidos
+        Pipe-->>Filter: Lanza 400 BadRequestException
+        Filter-->>Cliente: { success: false, statusCode: 400, error: "Bad Request", ... }
+    end
+
+    Pipe->>Ctrl: Petición limpia con @CurrentUser
+    Ctrl->>Srv: Ejecuta lógica de negocio (RN-01, RN-02, RN-03)
+    alt Regla de negocio rota (recurso ajeno / transición inválida)
+        Srv-->>Filter: Lanza 403 Forbidden / 404 NotFound / 409 Conflict
+        Filter-->>Cliente: Respuesta normalizada con código HTTP real
+    end
+
+    Srv->>Repo: Consulta o persiste con parámetros
+    Repo->>DB: Operación SQL TypeORM
+    DB-->>Repo: Registros / Confirmación
+    Repo-->>Srv: Entidad persistida
+    Srv-->>Ctrl: Resultado de negocio
+    Ctrl->>Interceptor: Retorna data
+    Interceptor-->>Cliente: { success: true, data: ..., path: ..., timestamp: ... }
+```
+
+1. **Entrada**: La petición arriba al servidor HTTP con los encabezados obligatorios.
 2. **ApiKeyGuard**: Verifica el encabezado `x-api-key`. Si falta o no coincide con ninguna clave de `API_KEYS`, lanza `401 UnauthorizedException`.
 3. **UserGuard**: Extrae el encabezado `x-user`, consulta al `UsersService` para verificar existencia en base de datos e inyecta la entidad `User` en `request.user`. Si no existe o falta, lanza `401 UnauthorizedException`.
 4. **RolesGuard**: Lee los metadatos de `@Roles` del endpoint y valida que el rol del usuario autenticado esté autorizado. Si no, lanza `403 ForbiddenException`.
