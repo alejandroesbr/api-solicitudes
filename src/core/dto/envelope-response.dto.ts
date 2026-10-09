@@ -33,3 +33,4 @@ export class ErrorResponseDto {
   @ApiProperty({ example: '2026-10-09T15:00:00.000Z' })
   timestamp: string;
 }
+

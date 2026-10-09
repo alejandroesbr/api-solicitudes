@@ -13,3 +13,4 @@ export function setupApp(app: INestApplication): void {
   app.useGlobalInterceptors(new TransformInterceptor());
   app.useGlobalFilters(new AllExceptionsFilter());
 }
+

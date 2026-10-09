@@ -18,3 +18,4 @@ services:
 volumes:
   sqlite_data:
     driver: local
+

@@ -3,3 +3,4 @@ export enum UserRole {
   SUPERVISOR = 'supervisor',
   ASESOR = 'asesor',
 }
+

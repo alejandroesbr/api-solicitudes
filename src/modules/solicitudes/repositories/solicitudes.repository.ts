@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, Repository } from 'typeorm';
-import { Solicitud } from '../entities/solicitud.entity';
 import { EstadoSolicitud } from '../../../core/enums/estados.enum';
+import { Solicitud } from '../entities/solicitud.entity';
 
 export interface SolicitudFilterOptions {
   asesor?: string;
@@ -46,7 +46,10 @@ export class SolicitudesRepository {
     });
   }
 
-  async updateEstado(id: number, nuevoEstado: EstadoSolicitud): Promise<Solicitud> {
+  async updateEstado(
+    id: number,
+    nuevoEstado: EstadoSolicitud,
+  ): Promise<Solicitud> {
     await this.repository.update(id, { estado: nuevoEstado });
     const updated = await this.findById(id);
     return updated!;

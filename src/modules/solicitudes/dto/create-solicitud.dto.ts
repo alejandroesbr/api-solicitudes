@@ -1,11 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import {
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  MaxLength,
-} from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateSolicitudDto {
   @ApiProperty({
@@ -14,7 +9,9 @@ export class CreateSolicitudDto {
     maxLength: 255,
   })
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
-  @IsNotEmpty({ message: 'El campo cliente es obligatorio y no puede estar vacío' })
+  @IsNotEmpty({
+    message: 'El campo cliente es obligatorio y no puede estar vacío',
+  })
   @IsString({ message: 'El campo cliente debe ser una cadena de texto' })
   @MaxLength(255, {
     message: 'El campo cliente no debe exceder los 255 caracteres',
@@ -26,7 +23,9 @@ export class CreateSolicitudDto {
     example: 'Contacto inicial para cotización de plan corporativo anual',
   })
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
-  @IsNotEmpty({ message: 'El campo descripcion es obligatorio y no puede estar vacío' })
+  @IsNotEmpty({
+    message: 'El campo descripcion es obligatorio y no puede estar vacío',
+  })
   @IsString({ message: 'El campo descripcion debe ser una cadena de texto' })
   descripcion: string;
 

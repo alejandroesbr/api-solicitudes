@@ -8,7 +8,9 @@ export class SolicitudResponseDto {
   @ApiProperty({ example: 'Acme Corp' })
   cliente: string;
 
-  @ApiProperty({ example: 'Contacto inicial para cotización de plan corporativo anual' })
+  @ApiProperty({
+    example: 'Contacto inicial para cotización de plan corporativo anual',
+  })
   descripcion: string;
 
   @ApiProperty({ example: 'asesor1' })

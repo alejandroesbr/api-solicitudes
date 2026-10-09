@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 
-# ==============================================================================
 # Script de pruebas automatizadas con cURL para API Solicitudes Comerciales
-# ==============================================================================
 
 BASE_URL="http://localhost:3000"
 KEY1="key-client-alpha-12345"
@@ -14,9 +12,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}================================================================${NC}"
 echo -e "${BLUE}    Iniciando batería de pruebas con cURL - API Solicitudes     ${NC}"
-echo -e "${BLUE}================================================================${NC}\n"
 
 test_request() {
   local title="$1"
@@ -112,6 +108,5 @@ test_request "18. Transición inválida: reabrir solicitud resuelta" 409 \
 test_request "19. Documentación Swagger OpenAPI disponible" 200 \
   "curl -X GET '${BASE_URL}/api/docs-json'"
 
-echo -e "${BLUE}================================================================${NC}"
 echo -e "${GREEN}      Batería de pruebas cURL finalizada con éxito              ${NC}"
-echo -e "${BLUE}================================================================${NC}"
+

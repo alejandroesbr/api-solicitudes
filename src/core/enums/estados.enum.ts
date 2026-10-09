@@ -3,3 +3,4 @@ export enum EstadoSolicitud {
   EN_GESTION = 'EN_GESTION',
   RESUELTA = 'RESUELTA',
 }
+

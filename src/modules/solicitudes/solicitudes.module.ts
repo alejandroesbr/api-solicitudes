@@ -13,3 +13,4 @@ import { UsersModule } from '../users/users.module';
   exports: [SolicitudesService, SolicitudesRepository],
 })
 export class SolicitudesModule {}
+

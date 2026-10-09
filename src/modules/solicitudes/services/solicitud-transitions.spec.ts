@@ -6,7 +6,10 @@ describe('solicitud-transitions (Unit)', () => {
   describe('Transiciones permitidas (flujo nominal)', () => {
     it('debe permitir la transición de PENDIENTE a EN_GESTION', () => {
       expect(
-        isValidTransition(EstadoSolicitud.PENDIENTE, EstadoSolicitud.EN_GESTION),
+        isValidTransition(
+          EstadoSolicitud.PENDIENTE,
+          EstadoSolicitud.EN_GESTION,
+        ),
       ).toBe(true);
     });
 
@@ -38,7 +41,10 @@ describe('solicitud-transitions (Unit)', () => {
 
     it('debe rechazar retroceder de EN_GESTION a PENDIENTE', () => {
       expect(
-        isValidTransition(EstadoSolicitud.EN_GESTION, EstadoSolicitud.PENDIENTE),
+        isValidTransition(
+          EstadoSolicitud.EN_GESTION,
+          EstadoSolicitud.PENDIENTE,
+        ),
       ).toBe(false);
     });
 
@@ -50,7 +56,10 @@ describe('solicitud-transitions (Unit)', () => {
 
     it('debe rechazar pasar al mismo estado: EN_GESTION -> EN_GESTION', () => {
       expect(
-        isValidTransition(EstadoSolicitud.EN_GESTION, EstadoSolicitud.EN_GESTION),
+        isValidTransition(
+          EstadoSolicitud.EN_GESTION,
+          EstadoSolicitud.EN_GESTION,
+        ),
       ).toBe(false);
     });
 

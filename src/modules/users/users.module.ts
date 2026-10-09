@@ -10,3 +10,4 @@ import { UsersService } from './services/users.service';
   exports: [UsersService, UsersRepository, TypeOrmModule],
 })
 export class UsersModule {}
+

@@ -1,6 +1,4 @@
-# ==========================================
 # Stage 1: Build stage
-# ==========================================
 FROM node:20-slim AS builder
 
 WORKDIR /app
@@ -29,9 +27,7 @@ RUN pnpm build
 # Limpiar dependencias de desarrollo para producción
 RUN pnpm prune --prod
 
-# ==========================================
 # Stage 2: Production runner stage
-# ==========================================
 FROM node:20-slim AS runner
 
 WORKDIR /app
@@ -54,3 +50,4 @@ EXPOSE 3000
 VOLUME ["/app/data"]
 
 CMD ["node", "dist/main"]
+
