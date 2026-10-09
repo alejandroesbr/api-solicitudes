@@ -51,4 +51,4 @@ async function bootstrap() {
   logger.log(`Documentación Swagger disponible en: http://localhost:${port}/api/docs`);
 }
 
-bootstrap();
+void bootstrap();

@@ -5,7 +5,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { EstadoSolicitud } from '../../../core/enums/estados.enum';
 import { UserRole } from '../../../core/enums/roles.enum';
 import { User } from '../../users/entities/user.entity';
 import { UsersService } from '../../users/services/users.service';
