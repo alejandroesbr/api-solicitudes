@@ -1,0 +1,14 @@
+node_modules
+dist
+.git
+*.sqlite
+*.sqlite3
+*.db
+.env
+.env.*
+!.env.example
+coverage
+.nyc_output
+test
+logs
+*.log
