@@ -7,7 +7,13 @@ import { Solicitud } from '../entities/solicitud.entity';
 import { SolicitudHistorial } from '../entities/solicitud-historial.entity';
 
 export interface SolicitudFilterOptions {
+  estado?: EstadoSolicitud;
   asesor?: string;
+  cliente?: string;
+  desde?: Date;
+  hasta?: Date;
+  page: number;
+  limit: number;
 }
 
 @Injectable()
@@ -57,7 +63,47 @@ export class SolicitudesRepository {
     return this.repository.findOne({ where: { id } });
   }
 
-  async findAll(filter?: SolicitudFilterOptions): Promise<Solicitud[]> {
+  async findWithFilters(options: SolicitudFilterOptions): Promise<{
+    items: Solicitud[];
+    total: number;
+  }> {
+    const qb = this.repository.createQueryBuilder('solicitud');
+
+    if (options.estado) {
+      qb.andWhere('solicitud.estado = :estado', { estado: options.estado });
+    }
+
+    if (options.asesor) {
+      qb.andWhere('solicitud.asesor = :asesor', { asesor: options.asesor });
+    }
+
+    if (options.cliente) {
+      qb.andWhere('LOWER(solicitud.cliente) LIKE :cliente', {
+        cliente: `%${options.cliente.toLowerCase()}%`,
+      });
+    }
+
+    if (options.desde) {
+      qb.andWhere('solicitud.creada_en >= :desde', {
+        desde: options.desde.toISOString(),
+      });
+    }
+
+    if (options.hasta) {
+      qb.andWhere('solicitud.creada_en <= :hasta', {
+        hasta: options.hasta.toISOString(),
+      });
+    }
+
+    qb.orderBy('solicitud.id', 'DESC')
+      .skip((options.page - 1) * options.limit)
+      .take(options.limit);
+
+    const [items, total] = await qb.getManyAndCount();
+    return { items, total };
+  }
+
+  async findAll(filter?: { asesor?: string }): Promise<Solicitud[]> {
     const where: FindOptionsWhere<Solicitud> = {};
 
     if (filter?.asesor) {

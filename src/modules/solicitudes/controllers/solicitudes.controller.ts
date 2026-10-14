@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -29,6 +30,8 @@ import { UserRole } from '../../../core/enums/roles.enum';
 import { User } from '../../users/entities/user.entity';
 import { AsignarSolicitudDto } from '../dto/asignar-solicitud.dto';
 import { CreateSolicitudDto } from '../dto/create-solicitud.dto';
+import { FilterSolicitudesDto } from '../dto/filter-solicitudes.dto';
+import { PaginatedSolicitudesDto } from '../dto/paginated-solicitudes.dto';
 import { SolicitudResponseDto } from '../dto/solicitud-response.dto';
 import { UpdateEstadoSolicitudDto } from '../dto/update-estado-solicitud.dto';
 import { Solicitud } from '../entities/solicitud.entity';
@@ -85,16 +88,22 @@ export class SolicitudesController {
   @Get()
   @Roles(UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.ASESOR)
   @ApiOperation({
-    summary: 'Consultar solicitudes según permisos del usuario',
+    summary: 'Consultar solicitudes con filtros y paginación (RN-08)',
     description:
-      'Admin y supervisor obtienen todas las solicitudes. Asesor solo obtiene las asignadas a su propio usuario.',
+      'Permite buscar solicitudes filtrando opcionalmente por estado, asesor, cliente (búsqueda parcial insensible a mayúsculas), rango de fechas desde/hasta y paginación (page, limit). Admin y supervisor consultan todas; asesor solo las suyas.',
   })
-  @ApiEnvelopeResponse(SolicitudResponseDto, {
-    isArray: true,
-    description: 'Lista de solicitudes obtenida con éxito',
+  @ApiEnvelopeResponse(PaginatedSolicitudesDto, {
+    description: 'Página de solicitudes y metadatos obtenida con éxito',
   })
-  async findAll(@CurrentUser() user: User): Promise<Solicitud[]> {
-    return this.solicitudesService.findAll(user);
+  @ApiBadRequestResponse({
+    description: 'Parámetros de consulta inválidos (ej: desde posterior a hasta, limit > 100 o negativo)',
+    type: ErrorResponseDto,
+  })
+  async findAll(
+    @Query() dto: FilterSolicitudesDto,
+    @CurrentUser() user: User,
+  ): Promise<PaginatedSolicitudesDto> {
+    return this.solicitudesService.findAll(dto, user);
   }
 
   @Get(':id')

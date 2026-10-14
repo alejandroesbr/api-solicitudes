@@ -11,6 +11,8 @@ import { User } from '../../users/entities/user.entity';
 import { UsersService } from '../../users/services/users.service';
 import { AsignarSolicitudDto } from '../dto/asignar-solicitud.dto';
 import { CreateSolicitudDto } from '../dto/create-solicitud.dto';
+import { FilterSolicitudesDto } from '../dto/filter-solicitudes.dto';
+import { PaginatedSolicitudesDto } from '../dto/paginated-solicitudes.dto';
 import { UpdateEstadoSolicitudDto } from '../dto/update-estado-solicitud.dto';
 import { Solicitud } from '../entities/solicitud.entity';
 import { SolicitudHistorial } from '../entities/solicitud-historial.entity';
@@ -82,15 +84,58 @@ export class SolicitudesService {
   }
 
   /**
-   * RN-02: Consulta de solicitudes.
-   * - admin y supervisor consultan todas.
-   * - asesor solo consulta las suyas (filtro aplicado en el where de la base de datos).
+   * RN-02 y RN-08: Consulta de solicitudes con filtros y paginación.
+   * - Filtros opcionales: estado, asesor, cliente (insensible a mayúsculas), desde y hasta (ISO 8601).
+   * - Validación de intervalo: desde no puede ser posterior a hasta (400).
+   * - Restricción de permisos: asesor solo consulta las asignadas a sí mismo (incluso si envía asesor=otro).
+   * - Paginación: page (default 1), limit (default 10, max 100).
+   * - Retorna: { items, page, limit, total, totalPages }.
    */
-  async findAll(user: User): Promise<Solicitud[]> {
-    if (user.role === UserRole.ASESOR) {
-      return this.solicitudesRepository.findAll({ asesor: user.username });
+  async findAll(
+    dto: FilterSolicitudesDto,
+    user: User,
+  ): Promise<PaginatedSolicitudesDto> {
+    if (dto.desde && dto.hasta) {
+      if (new Date(dto.desde) > new Date(dto.hasta)) {
+        throw new BadRequestException(
+          'La fecha desde no puede ser posterior a la fecha hasta',
+        );
+      }
     }
-    return this.solicitudesRepository.findAll();
+
+    const effectiveAsesor =
+      user.role === UserRole.ASESOR ? user.username : dto.asesor;
+
+    const page = dto.page || 1;
+    const limit = dto.limit || 10;
+
+    let hastaDate: Date | undefined = undefined;
+    if (dto.hasta) {
+      hastaDate = new Date(dto.hasta);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dto.hasta)) {
+        hastaDate.setUTCHours(23, 59, 59, 999);
+      }
+    }
+
+    const { items, total } = await this.solicitudesRepository.findWithFilters({
+      estado: dto.estado,
+      asesor: effectiveAsesor,
+      cliente: dto.cliente,
+      desde: dto.desde ? new Date(dto.desde) : undefined,
+      hasta: hastaDate,
+      page,
+      limit,
+    });
+
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+
+    return {
+      items,
+      page,
+      limit,
+      total,
+      totalPages,
+    };
   }
 
   /**

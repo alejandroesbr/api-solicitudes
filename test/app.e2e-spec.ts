@@ -109,7 +109,7 @@ describe('API Solicitudes Comerciales (E2E Tests - 12 Criterios)', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(Array.isArray(res.body.data.items ?? res.body.data)).toBe(true);
     });
 
     it('debe permitir consumir la API con la segunda clave (KEY_BETA)', async () => {
@@ -120,7 +120,7 @@ describe('API Solicitudes Comerciales (E2E Tests - 12 Criterios)', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(Array.isArray(res.body.data.items ?? res.body.data)).toBe(true);
     });
   });
 
@@ -340,7 +340,7 @@ describe('API Solicitudes Comerciales (E2E Tests - 12 Criterios)', () => {
         .set('x-user', 'asesor1');
 
       expect(res.status).toBe(200);
-      const items = res.body.data;
+      const items = res.body.data.items ?? res.body.data;
       expect(items.length).toBeGreaterThan(0);
       items.forEach((item: any) => {
         expect(item.asesor).toBe('asesor1');
@@ -357,7 +357,7 @@ describe('API Solicitudes Comerciales (E2E Tests - 12 Criterios)', () => {
         .set('x-user', 'asesor2');
 
       expect(res.status).toBe(200);
-      const items = res.body.data;
+      const items = res.body.data.items ?? res.body.data;
       expect(items.length).toBeGreaterThan(0);
       items.forEach((item: any) => {
         expect(item.asesor).toBe('asesor2');
@@ -374,7 +374,8 @@ describe('API Solicitudes Comerciales (E2E Tests - 12 Criterios)', () => {
         .set('x-user', 'supervisor');
 
       expect(resSup.status).toBe(200);
-      const supIds = resSup.body.data.map((s: any) => s.id);
+      const supItems = resSup.body.data.items ?? resSup.body.data;
+      const supIds = supItems.map((s: any) => s.id);
       expect(supIds).toContain(idAsesor1);
       expect(supIds).toContain(idAsesor2);
 
@@ -384,7 +385,8 @@ describe('API Solicitudes Comerciales (E2E Tests - 12 Criterios)', () => {
         .set('x-user', 'admin');
 
       expect(resAdmin.status).toBe(200);
-      const adminIds = resAdmin.body.data.map((s: any) => s.id);
+      const adminItems = resAdmin.body.data.items ?? resAdmin.body.data;
+      const adminIds = adminItems.map((s: any) => s.id);
       expect(adminIds).toContain(idAsesor1);
       expect(adminIds).toContain(idAsesor2);
     });
@@ -760,6 +762,163 @@ describe('API Solicitudes Comerciales (E2E Tests - 12 Criterios)', () => {
         .send({ asesor: 'asesor1' });
 
       expect(res.status).toBe(404);
+      expect(res.body.success).toBe(false);
+    });
+  });
+
+  // =========================================================================
+  // RN-08: Consulta con filtros y paginación
+  // =========================================================================
+  describe('RN-08: Consulta con filtros y paginación', () => {
+    beforeAll(async () => {
+      await request(app.getHttpServer())
+        .post('/solicitudes')
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'asesor1')
+        .send({
+          cliente: 'Tecnologías del Pacífico SAS',
+          descripcion: 'Filtro test 1',
+        });
+
+      await request(app.getHttpServer())
+        .post('/solicitudes')
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'asesor2')
+        .send({
+          cliente: 'Servicios del Pacífico LTDA',
+          descripcion: 'Filtro test 2',
+        });
+    });
+
+    it('retorna la estructura con metadatos page, limit, total y totalPages por defecto', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/solicitudes')
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'admin');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toHaveProperty('items');
+      expect(res.body.data).toHaveProperty('page', 1);
+      expect(res.body.data).toHaveProperty('limit', 10);
+      expect(res.body.data).toHaveProperty('total');
+      expect(res.body.data).toHaveProperty('totalPages');
+      expect(typeof res.body.data.total).toBe('number');
+      expect(typeof res.body.data.totalPages).toBe('number');
+      expect(Array.isArray(res.body.data.items)).toBe(true);
+    });
+
+    it('filtra por estado correctamente', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/solicitudes?estado=RESUELTA')
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'admin');
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.items.length).toBeGreaterThan(0);
+      res.body.data.items.forEach((item: any) => {
+        expect(item.estado).toBe(EstadoSolicitud.RESUELTA);
+      });
+    });
+
+    it('filtra por asesor para supervisor o admin', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/solicitudes?asesor=asesor1')
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'admin');
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.items.length).toBeGreaterThan(0);
+      res.body.data.items.forEach((item: any) => {
+        expect(item.asesor).toBe('asesor1');
+      });
+    });
+
+    it('no permite a un asesor ampliar permisos mediante el filtro asesor (solo ve las suyas)', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/solicitudes?asesor=asesor2')
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'asesor1');
+
+      expect(res.status).toBe(200);
+      res.body.data.items.forEach((item: any) => {
+        expect(item.asesor).toBe('asesor1');
+      });
+    });
+
+    it('realiza búsqueda parcial de cliente sin distinguir mayúsculas y minúsculas', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/solicitudes?cliente=PACÍFICO')
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'admin');
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.items.length).toBeGreaterThanOrEqual(2);
+      res.body.data.items.forEach((item: any) => {
+        expect(item.cliente.toLowerCase()).toContain('pacífico');
+      });
+    });
+
+    it('permite paginación personalizada con page y limit', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/solicitudes?page=1&limit=2')
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'admin');
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.page).toBe(1);
+      expect(res.body.data.limit).toBe(2);
+      expect(res.body.data.items.length).toBeLessThanOrEqual(2);
+    });
+
+    it('rechaza limit superior a 100 con 400 Bad Request', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/solicitudes?limit=101')
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'admin');
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+    });
+
+    it('rechaza limit negativo, cero o texto con 400 Bad Request', async () => {
+      const resZero = await request(app.getHttpServer())
+        .get('/solicitudes?limit=0')
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'admin');
+      expect(resZero.status).toBe(400);
+
+      const resNeg = await request(app.getHttpServer())
+        .get('/solicitudes?limit=-5')
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'admin');
+      expect(resNeg.status).toBe(400);
+
+      const resText = await request(app.getHttpServer())
+        .get('/solicitudes?limit=muchos')
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'admin');
+      expect(resText.status).toBe(400);
+    });
+
+    it('rechaza cuando la fecha desde es posterior a hasta con 400 Bad Request', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/solicitudes?desde=2026-12-31T00:00:00.000Z&hasta=2026-01-01T00:00:00.000Z')
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'admin');
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toContain('desde no puede ser posterior');
+    });
+
+    it('rechaza fechas con formato ISO 8601 inválido', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/solicitudes?desde=ayer')
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'admin');
+
+      expect(res.status).toBe(400);
       expect(res.body.success).toBe(false);
     });
   });
