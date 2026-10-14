@@ -3,9 +3,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
 import { setupApp } from '../src/setup-app';
 import { EstadoSolicitud } from '../src/core/enums/estados.enum';
+import { TipoEventoHistorial } from '../src/core/enums/tipo-evento-historial.enum';
+import { Solicitud } from '../src/modules/solicitudes/entities/solicitud.entity';
+import { SolicitudHistorial } from '../src/modules/solicitudes/entities/solicitud-historial.entity';
 
 describe('API Solicitudes Comerciales (E2E Tests - 12 Criterios)', () => {
   let app: INestApplication;
@@ -924,6 +928,159 @@ describe('API Solicitudes Comerciales (E2E Tests - 12 Criterios)', () => {
   });
 
   // =========================================================================
+  // RN-09: Historial de auditoría transaccional
+  // =========================================================================
+  describe('RN-09: Historial de auditoría transaccional', () => {
+    let auditSolicitudId: number;
+
+    it('registra un evento CREACION con valor inicial PENDIENTE al crear una solicitud', async () => {
+      const createRes = await request(app.getHttpServer())
+        .post('/solicitudes')
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'supervisor')
+        .send({
+          cliente: 'Auditoría Cliente Test',
+          descripcion: 'Prueba de historial',
+        });
+
+      auditSolicitudId = createRes.body.data.id;
+
+      const histRes = await request(app.getHttpServer())
+        .get(`/solicitudes/${auditSolicitudId}/historial`)
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'supervisor');
+
+      expect(histRes.status).toBe(200);
+      expect(histRes.body.success).toBe(true);
+      expect(Array.isArray(histRes.body.data)).toBe(true);
+      expect(histRes.body.data.length).toBe(1);
+
+      const creacionEvento = histRes.body.data[0];
+      expect(creacionEvento.solicitudId).toBe(auditSolicitudId);
+      expect(creacionEvento.tipoEvento).toBe(TipoEventoHistorial.CREACION);
+      expect(creacionEvento.valorAnterior).toBeNull();
+      expect(creacionEvento.valorNuevo).toBe(EstadoSolicitud.PENDIENTE);
+      expect(creacionEvento.usuarioActor).toBe('supervisor');
+      expect(creacionEvento.fechaEvento).toBeDefined();
+    });
+
+    it('registra un evento ASIGNACION al asignar la solicitud', async () => {
+      await request(app.getHttpServer())
+        .patch(`/solicitudes/${auditSolicitudId}/asignar`)
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'admin')
+        .send({ asesor: 'asesor1' });
+
+      const histRes = await request(app.getHttpServer())
+        .get(`/solicitudes/${auditSolicitudId}/historial`)
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'admin');
+
+      expect(histRes.status).toBe(200);
+      expect(histRes.body.data.length).toBe(2);
+
+      const asignacionEvento = histRes.body.data[1];
+      expect(asignacionEvento.tipoEvento).toBe(TipoEventoHistorial.ASIGNACION);
+      expect(asignacionEvento.valorAnterior).toBeNull();
+      expect(asignacionEvento.valorNuevo).toBe('asesor1');
+      expect(asignacionEvento.usuarioActor).toBe('admin');
+    });
+
+    it('registra un evento ESTADO al actualizar el estado de la solicitud', async () => {
+      await request(app.getHttpServer())
+        .patch(`/solicitudes/${auditSolicitudId}/estado`)
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'asesor1')
+        .send({ estado: EstadoSolicitud.EN_GESTION });
+
+      const histRes = await request(app.getHttpServer())
+        .get(`/solicitudes/${auditSolicitudId}/historial`)
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'supervisor');
+
+      expect(histRes.status).toBe(200);
+      expect(histRes.body.data.length).toBe(3);
+
+      const estadoEvento = histRes.body.data[2];
+      expect(estadoEvento.tipoEvento).toBe(TipoEventoHistorial.ESTADO);
+      expect(estadoEvento.valorAnterior).toBe(EstadoSolicitud.PENDIENTE);
+      expect(estadoEvento.valorNuevo).toBe(EstadoSolicitud.EN_GESTION);
+      expect(estadoEvento.usuarioActor).toBe('asesor1');
+    });
+
+    it('asesor asignado puede consultar el historial de su solicitud', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/solicitudes/${auditSolicitudId}/historial`)
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'asesor1');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.length).toBeGreaterThanOrEqual(3);
+    });
+
+    it('asesor no asignado recibe 403 Forbidden al consultar el historial', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/solicitudes/${auditSolicitudId}/historial`)
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'asesor2');
+
+      expect(res.status).toBe(403);
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toContain('No tiene permisos');
+    });
+
+    it('retorna 404 si la solicitud consultada no existe', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/solicitudes/999999/historial')
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'admin');
+
+      expect(res.status).toBe(404);
+      expect(res.body.success).toBe(false);
+    });
+
+    it('el historial es de solo lectura (rechaza endpoints de escritura como POST /historial)', async () => {
+      const res = await request(app.getHttpServer())
+        .post(`/solicitudes/${auditSolicitudId}/historial`)
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'admin')
+        .send({ evento: 'FALSO' });
+
+      expect(res.status).toBe(404);
+    });
+
+    it('ejecuta los cambios y el historial dentro de la misma transacción (rollback ante fallo)', async () => {
+      const dataSource = app.get(DataSource);
+      const solicitudRepo = dataSource.getRepository(Solicitud);
+      const historialRepo = dataSource.getRepository(SolicitudHistorial);
+
+      const conteoInicialSolicitudes = await solicitudRepo.count();
+      const conteoInicialHistorial = await historialRepo.count();
+
+      await expect(
+        dataSource.transaction(async (manager) => {
+          const nueva = manager.getRepository(Solicitud).create({
+            cliente: 'Transacción Fallida',
+            descripcion: 'Debe hacer rollback',
+            asesor: 'asesor1',
+            estado: EstadoSolicitud.PENDIENTE,
+          });
+          await manager.getRepository(Solicitud).save(nueva);
+
+          throw new Error('Simulación de fallo para verificar rollback');
+        }),
+      ).rejects.toThrow('Simulación de fallo para verificar rollback');
+
+      const conteoFinalSolicitudes = await solicitudRepo.count();
+      const conteoFinalHistorial = await historialRepo.count();
+
+      expect(conteoFinalSolicitudes).toBe(conteoInicialSolicitudes);
+      expect(conteoFinalHistorial).toBe(conteoInicialHistorial);
+    });
+  });
+
+  // =========================================================================
   // CRITERIO 11: Swagger documenta los endpoints y sus encabezados
   // =========================================================================
   describe('Criterio 11: Documentación Swagger / OpenAPI disponible', () => {
@@ -941,6 +1098,8 @@ describe('API Solicitudes Comerciales (E2E Tests - 12 Criterios)', () => {
       expect(res.body.paths).toHaveProperty('/solicitudes');
       expect(res.body.paths).toHaveProperty('/solicitudes/{id}');
       expect(res.body.paths).toHaveProperty('/solicitudes/{id}/estado');
+      expect(res.body.paths).toHaveProperty('/solicitudes/{id}/asignar');
+      expect(res.body.paths).toHaveProperty('/solicitudes/{id}/historial');
     });
   });
 

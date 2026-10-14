@@ -32,9 +32,11 @@ import { AsignarSolicitudDto } from '../dto/asignar-solicitud.dto';
 import { CreateSolicitudDto } from '../dto/create-solicitud.dto';
 import { FilterSolicitudesDto } from '../dto/filter-solicitudes.dto';
 import { PaginatedSolicitudesDto } from '../dto/paginated-solicitudes.dto';
+import { SolicitudHistorialResponseDto } from '../dto/solicitud-historial-response.dto';
 import { SolicitudResponseDto } from '../dto/solicitud-response.dto';
 import { UpdateEstadoSolicitudDto } from '../dto/update-estado-solicitud.dto';
 import { Solicitud } from '../entities/solicitud.entity';
+import { SolicitudHistorial } from '../entities/solicitud-historial.entity';
 import { SolicitudesService } from '../services/solicitudes.service';
 
 @ApiTags('Solicitudes Comerciales')
@@ -201,5 +203,38 @@ export class SolicitudesController {
     @CurrentUser() user: User,
   ): Promise<Solicitud> {
     return this.solicitudesService.asignar(id, dto, user);
+  }
+
+  @Get(':id/historial')
+  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR, UserRole.ASESOR)
+  @ApiOperation({
+    summary: 'Consultar historial de auditoría de una solicitud (RN-09)',
+    description:
+      'Retorna la lista de eventos de auditoría (creación, asignación, cambios de estado) de una solicitud. Admin y supervisor consultan cualquier solicitud; asesor solo las que tiene asignadas actualmente.',
+  })
+  @ApiParam({
+    name: 'id',
+    type: Number,
+    description: 'ID de la solicitud',
+    example: 1,
+  })
+  @ApiEnvelopeResponse(SolicitudHistorialResponseDto, {
+    isArray: true,
+    description: 'Historial de la solicitud obtenido con éxito',
+  })
+  @ApiNotFoundResponse({
+    description: 'Solicitud no encontrada',
+    type: ErrorResponseDto,
+  })
+  @ApiForbiddenResponse({
+    description:
+      'No tiene permisos para consultar el historial de esta solicitud',
+    type: ErrorResponseDto,
+  })
+  async findHistorial(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ): Promise<SolicitudHistorial[]> {
+    return this.solicitudesService.findHistorial(id, user);
   }
 }
