@@ -212,7 +212,7 @@ describe('API Solicitudes Comerciales (E2E Tests - 12 Criterios)', () => {
       expect(res.body.success).toBe(false);
     });
 
-    it('debe rechazar creación por admin sin asignar asesor', async () => {
+    it('debe registrar solicitud sin asignación cuando la crea admin o supervisor (RN-07)', async () => {
       const res = await request(app.getHttpServer())
         .post('/solicitudes')
         .set('x-api-key', KEY_ALPHA)
@@ -222,38 +222,9 @@ describe('API Solicitudes Comerciales (E2E Tests - 12 Criterios)', () => {
           descripcion: 'Cuenta corporativa',
         });
 
-      expect(res.status).toBe(400);
-      expect(res.body.message).toContain('asesor es obligatorio');
-    });
-
-    it('debe rechazar creación por admin asignando un asesor inexistente', async () => {
-      const res = await request(app.getHttpServer())
-        .post('/solicitudes')
-        .set('x-api-key', KEY_ALPHA)
-        .set('x-user', 'admin')
-        .send({
-          cliente: 'Banco Global',
-          descripcion: 'Cuenta corporativa',
-          asesor: 'no-existe-123',
-        });
-
-      expect(res.status).toBe(400);
-      expect(res.body.message).toContain('debe existir en el sistema');
-    });
-
-    it('debe rechazar creación asignando a un usuario que no tiene rol asesor', async () => {
-      const res = await request(app.getHttpServer())
-        .post('/solicitudes')
-        .set('x-api-key', KEY_ALPHA)
-        .set('x-user', 'admin')
-        .send({
-          cliente: 'Banco Global',
-          descripcion: 'Cuenta corporativa',
-          asesor: 'supervisor', // rol supervisor, no asesor
-        });
-
-      expect(res.status).toBe(400);
-      expect(res.body.message).toContain('tener rol asesor');
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.asesor).toBeNull();
     });
 
     it('debe rechazar ID no numérico en parámetro :id con ParseIntPipe (400)', async () => {
@@ -666,6 +637,130 @@ describe('API Solicitudes Comerciales (E2E Tests - 12 Criterios)', () => {
         statusCode: 409,
         error: 'Conflict',
       });
+    });
+  });
+
+  // =========================================================================
+  // RN-07: Asignación y reasignación de solicitudes
+  // =========================================================================
+  describe('RN-07: Asignación y reasignación de solicitudes', () => {
+    let solicitudId: number;
+    let solicitudResueltaId: number;
+
+    beforeAll(async () => {
+      // Crear solicitud sin asignar (creada por supervisor)
+      const res1 = await request(app.getHttpServer())
+        .post('/solicitudes')
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'supervisor')
+        .send({
+          cliente: 'Empresa Alpha',
+          descripcion: 'Interés en póliza',
+        });
+      solicitudId = res1.body.data.id;
+
+      // Crear solicitud y pasarla a RESUELTA
+      const res2 = await request(app.getHttpServer())
+        .post('/solicitudes')
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'asesor1')
+        .send({
+          cliente: 'Empresa Beta',
+          descripcion: 'Venta cerrada',
+        });
+      solicitudResueltaId = res2.body.data.id;
+
+      await request(app.getHttpServer())
+        .patch(`/solicitudes/${solicitudResueltaId}/estado`)
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'asesor1')
+        .send({ estado: EstadoSolicitud.EN_GESTION });
+
+      await request(app.getHttpServer())
+        .patch(`/solicitudes/${solicitudResueltaId}/estado`)
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'asesor1')
+        .send({ estado: EstadoSolicitud.RESUELTA });
+    });
+
+    it('permite a un admin asignar una solicitud a un asesor válido', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/solicitudes/${solicitudId}/asignar`)
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'admin')
+        .send({ asesor: 'asesor1' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.asesor).toBe('asesor1');
+    });
+
+    it('permite a un supervisor reasignar una solicitud a otro asesor válido', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/solicitudes/${solicitudId}/asignar`)
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'supervisor')
+        .send({ asesor: 'asesor2' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.asesor).toBe('asesor2');
+      expect(res.body.data.estado).toBe(EstadoSolicitud.PENDIENTE);
+    });
+
+    it('rechaza con 403 si un asesor intenta asignar o reasignar', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/solicitudes/${solicitudId}/asignar`)
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'asesor1')
+        .send({ asesor: 'asesor1' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.success).toBe(false);
+    });
+
+    it('rechaza con 400 si el asesor asignado no existe', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/solicitudes/${solicitudId}/asignar`)
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'admin')
+        .send({ asesor: 'fantasma' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+    });
+
+    it('rechaza con 400 si se intenta asignar a un usuario que no tiene rol asesor', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/solicitudes/${solicitudId}/asignar`)
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'admin')
+        .send({ asesor: 'supervisor' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+    });
+
+    it('rechaza con 409 si la solicitud está en estado RESUELTA', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/solicitudes/${solicitudResueltaId}/asignar`)
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'admin')
+        .send({ asesor: 'asesor2' });
+
+      expect(res.status).toBe(409);
+      expect(res.body.success).toBe(false);
+    });
+
+    it('rechaza con 404 si la solicitud no existe', async () => {
+      const res = await request(app.getHttpServer())
+        .patch('/solicitudes/999999/asignar')
+        .set('x-api-key', KEY_ALPHA)
+        .set('x-user', 'admin')
+        .send({ asesor: 'asesor1' });
+
+      expect(res.status).toBe(404);
+      expect(res.body.success).toBe(false);
     });
   });
 

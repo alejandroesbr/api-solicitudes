@@ -27,6 +27,7 @@ import { Roles } from '../../../core/decorators/roles.decorator';
 import { ErrorResponseDto } from '../../../core/dto/envelope-response.dto';
 import { UserRole } from '../../../core/enums/roles.enum';
 import { User } from '../../users/entities/user.entity';
+import { AsignarSolicitudDto } from '../dto/asignar-solicitud.dto';
 import { CreateSolicitudDto } from '../dto/create-solicitud.dto';
 import { SolicitudResponseDto } from '../dto/solicitud-response.dto';
 import { UpdateEstadoSolicitudDto } from '../dto/update-estado-solicitud.dto';
@@ -153,5 +154,43 @@ export class SolicitudesController {
     @CurrentUser() user: User,
   ): Promise<Solicitud> {
     return this.solicitudesService.updateEstado(id, dto, user);
+  }
+
+  @Patch(':id/asignar')
+  @Roles(UserRole.ADMIN, UserRole.SUPERVISOR)
+  @ApiOperation({
+    summary: 'Asignar o reasignar una solicitud a un asesor (RN-07)',
+    description:
+      'Permite a administradores y supervisores asignar o reasignar una solicitud a un asesor del catálogo. Si la solicitud está RESUELTA, retorna 409.',
+  })
+  @ApiParam({
+    name: 'id',
+    type: Number,
+    description: 'ID de la solicitud a asignar o reasignar',
+    example: 1,
+  })
+  @ApiEnvelopeResponse(SolicitudResponseDto, {
+    description: 'Solicitud asignada o reasignada correctamente',
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Datos inválidos o el usuario asignado no existe o no tiene rol asesor',
+    type: ErrorResponseDto,
+  })
+  @ApiNotFoundResponse({
+    description: 'Solicitud no encontrada',
+    type: ErrorResponseDto,
+  })
+  @ApiConflictResponse({
+    description:
+      'La solicitud se encuentra en estado RESUELTA y no puede reasignarse',
+    type: ErrorResponseDto,
+  })
+  async asignar(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: AsignarSolicitudDto,
+    @CurrentUser() user: User,
+  ): Promise<Solicitud> {
+    return this.solicitudesService.asignar(id, dto, user);
   }
 }

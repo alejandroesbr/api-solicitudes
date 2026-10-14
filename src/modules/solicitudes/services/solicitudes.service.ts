@@ -5,12 +5,15 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EstadoSolicitud } from '../../../core/enums/estados.enum';
 import { UserRole } from '../../../core/enums/roles.enum';
 import { User } from '../../users/entities/user.entity';
 import { UsersService } from '../../users/services/users.service';
+import { AsignarSolicitudDto } from '../dto/asignar-solicitud.dto';
 import { CreateSolicitudDto } from '../dto/create-solicitud.dto';
 import { UpdateEstadoSolicitudDto } from '../dto/update-estado-solicitud.dto';
 import { Solicitud } from '../entities/solicitud.entity';
+import { SolicitudHistorial } from '../entities/solicitud-historial.entity';
 import { SolicitudesRepository } from '../repositories/solicitudes.repository';
 import { isValidTransition } from './solicitud-transitions';
 
@@ -22,36 +25,60 @@ export class SolicitudesService {
   ) {}
 
   /**
-   * RN-01: Registrar solicitudes comerciales.
+   * RN-01 y RN-07: Registrar solicitudes comerciales.
    * - Si es asesor: se fija automáticamente su propio username.
-   * - Si es admin o supervisor: asesor es obligatorio y debe existir con rol asesor.
+   * - Si es supervisor o admin: queda sin asignación (null) hasta asignación explícita.
+   * - RN-09: Registra evento CREACION en el historial dentro de la transacción.
    */
   async create(dto: CreateSolicitudDto, user: User): Promise<Solicitud> {
-    let assignedAsesor: string;
+    const assignedAsesor = user.role === UserRole.ASESOR ? user.username : null;
 
-    if (user.role === UserRole.ASESOR) {
-      assignedAsesor = user.username;
-    } else {
-      if (!dto.asesor || dto.asesor.trim() === '') {
-        throw new BadRequestException(
-          'El campo asesor es obligatorio para usuarios con rol admin o supervisor',
-        );
-      }
-      assignedAsesor = dto.asesor.trim();
+    return this.solicitudesRepository.createAndSave(
+      {
+        cliente: dto.cliente,
+        descripcion: dto.descripcion,
+        asesor: assignedAsesor,
+      },
+      user.username,
+    );
+  }
 
-      const asesorUser = await this.usersService.findByUsername(assignedAsesor);
-      if (!asesorUser || asesorUser.role !== UserRole.ASESOR) {
-        throw new BadRequestException(
-          `El asesor asignado '${assignedAsesor}' debe existir en el sistema y tener rol asesor`,
-        );
-      }
+  /**
+   * RN-07: Asignación o reasignación de solicitudes comerciales.
+   * - Solo admin y supervisor pueden asignar/reasignar.
+   * - El usuario asignado debe existir y tener rol asesor.
+   * - Si la solicitud está en estado RESUELTA, rechazar con conflicto (409).
+   * - Reasignar no cambia automáticamente su estado.
+   * - Registra evento ASIGNACION en el historial dentro de la transacción.
+   */
+  async asignar(
+    id: number,
+    dto: AsignarSolicitudDto,
+    user: User,
+  ): Promise<Solicitud> {
+    const solicitud = await this.solicitudesRepository.findById(id);
+    if (!solicitud) {
+      throw new NotFoundException(`Solicitud con id ${id} no encontrada`);
     }
 
-    return this.solicitudesRepository.createAndSave({
-      cliente: dto.cliente,
-      descripcion: dto.descripcion,
-      asesor: assignedAsesor,
-    });
+    if (solicitud.estado === EstadoSolicitud.RESUELTA) {
+      throw new ConflictException(
+        'Una solicitud en estado RESUELTA no puede reasignarse',
+      );
+    }
+
+    const targetUser = await this.usersService.findByUsername(dto.asesor);
+    if (!targetUser || targetUser.role !== UserRole.ASESOR) {
+      throw new BadRequestException(
+        `El usuario asignado '${dto.asesor}' debe existir en el catálogo y tener el rol asesor`,
+      );
+    }
+
+    return this.solicitudesRepository.assign(
+      id,
+      targetUser.username,
+      user.username,
+    );
   }
 
   /**
@@ -87,11 +114,12 @@ export class SolicitudesService {
   }
 
   /**
-   * RN-03: Cambio de estado de la solicitud.
+   * RN-03 y RN-09: Cambio de estado de la solicitud.
    * Orden estricto de comprobación:
    * 1. Existencia -> 404
    * 2. Propiedad -> 403 si asesor ajeno
    * 3. Transición de estado -> 409 si inválida
+   * 4. Registra evento ESTADO en el historial dentro de la transacción.
    */
   async updateEstado(
     id: number,
@@ -115,6 +143,34 @@ export class SolicitudesService {
       );
     }
 
-    return this.solicitudesRepository.updateEstado(id, dto.estado);
+    return this.solicitudesRepository.updateEstado(
+      id,
+      dto.estado,
+      user.username,
+    );
+  }
+
+  /**
+   * RN-09: Consulta de historial de auditoría de una solicitud.
+   * - Si no existe: 404.
+   * - Solo admin y supervisor pueden consultar de cualquier solicitud.
+   * - Asesor solo puede consultar de solicitudes que tiene asignadas actualmente.
+   */
+  async findHistorial(
+    id: number,
+    user: User,
+  ): Promise<SolicitudHistorial[]> {
+    const solicitud = await this.solicitudesRepository.findById(id);
+    if (!solicitud) {
+      throw new NotFoundException(`Solicitud con id ${id} no encontrada`);
+    }
+
+    if (user.role === UserRole.ASESOR && solicitud.asesor !== user.username) {
+      throw new ForbiddenException(
+        'No tiene permisos para consultar el historial de esta solicitud',
+      );
+    }
+
+    return this.solicitudesRepository.findHistorialBySolicitudId(id);
   }
 }

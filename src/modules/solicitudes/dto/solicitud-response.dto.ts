@@ -13,8 +13,8 @@ export class SolicitudResponseDto {
   })
   descripcion: string;
 
-  @ApiProperty({ example: 'asesor1' })
-  asesor: string;
+  @ApiProperty({ example: 'asesor1', nullable: true })
+  asesor: string | null;
 
   @ApiProperty({ enum: EstadoSolicitud, example: EstadoSolicitud.PENDIENTE })
   estado: EstadoSolicitud;
